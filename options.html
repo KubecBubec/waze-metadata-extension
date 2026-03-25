@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="sk">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Waze metadata — nastavenia</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 42rem;
+        margin: 1.5rem auto;
+        padding: 0 1rem;
+        line-height: 1.45;
+      }
+      label {
+        display: block;
+        font-weight: 600;
+        margin-top: 1rem;
+      }
+      input[type="text"],
+      input[type="number"],
+      textarea {
+        width: 100%;
+        box-sizing: border-box;
+        margin-top: 0.25rem;
+        padding: 0.4rem 0.5rem;
+      }
+      textarea {
+        min-height: 4rem;
+        font-family: ui-monospace, monospace;
+        font-size: 0.85rem;
+      }
+      .hint {
+        font-size: 0.85rem;
+        color: #444;
+        margin-top: 0.2rem;
+      }
+      button {
+        margin-top: 1rem;
+        margin-right: 0.5rem;
+        padding: 0.45rem 0.75rem;
+        cursor: pointer;
+      }
+      #status {
+        margin-top: 1rem;
+        font-size: 0.9rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Waze metadata collector</h1>
+    <p>
+      Nechaj otvorenú kartu Live Map (aj s jazykom v ceste, napr.
+      <strong>https://www.waze.com/sk/live-map/</strong>). Každých N minút rozšírenie kartu obnoví, vytiahne cookies a
+      voliteľne ich pošle na tvoj server.
+    </p>
+    <p class="hint">
+      <strong>Logy rozšírenia:</strong> Chrome → Rozšírenia → Service worker → Inspect (riadky s predponou
+      <code>[Waze-metadata-ext]</code>). Na stránke Waze po behu hľadaj skupinu
+      <strong>„Waze metadata ext“</strong> a oranžové
+      <code>[Waze-metadata-ext] Spúšťam zber…</code> (štart). Stovky riadkov „TrustedScriptURL“ / „TrustedHTML“ sú z
+      waze.com, nie z rozšírenia. Ak nič z nášho nevidíš, karta nebola nájdená alebo SW nespustil beh — skontroluj Service worker.
+    </p>
+
+    <label for="refreshIntervalMinutes">Interval zberu metadát (minúty)</label>
+    <input id="refreshIntervalMinutes" type="number" min="1" step="1" />
+    <p class="hint">
+      Pred každým zberom sa karta Live Map vždy znova načíta (F5), potom pauza nižšie, potom cookies + georss test.
+    </p>
+
+    <label for="postSettleMs">Pauza po F5 pred zberom (ms)</label>
+    <input id="postSettleMs" type="number" min="0" step="500" />
+    <p class="hint">Odporúčané 3000–8000 ms (ako WAZE_POST_MAP_SETTLE_MS v headless skripte).</p>
+
+    <label for="liveMapUrl">Live map URL (prefix pre nájdenie karty)</label>
+    <input id="liveMapUrl" type="text" autocomplete="off" />
+
+    <label for="georssVerifyUrl">Georss URL na overenie (fetch v kontexte stránky)</label>
+    <textarea id="georssVerifyUrl" rows="3" spellcheck="false"></textarea>
+
+    <label for="ingestUrl">Ingest URL (POST JSON, prázdne = neodosielať)</label>
+    <input
+      id="ingestUrl"
+      type="text"
+      placeholder="http://localhost:3000/api/waze-metadata-ingest"
+      autocomplete="off"
+    />
+    <label for="ingestToken">Ingest token (Bearer, zhodný s WAZE_METADATA_INGEST_SECRET na serveri)</label>
+    <input id="ingestToken" type="password" placeholder="voliteľné ak server nevyžaduje" autocomplete="off" />
+    <p class="hint">
+      Next.js endpoint <code>/api/waze-metadata-ingest</code> zapíše JSON do <code>var/waze-metadata.json</code> ako
+      local-metadata-agent. V <code>.env</code> nastav <code>WAZE_METADATA_INGEST_SECRET</code> a sem rovnakú hodnotu.
+      Rozšírenie potrebuje „Povoliť odosielanie“ pre host ingest URL. PowerShell <code>Invoke-WebRequest</code> často dostane
+      403 od Waze, zatiaľ čo <code>curl.exe</code> nie — iný TLS klient; rozšírenie používa fetch ako Chrome.
+    </p>
+
+    <button type="button" id="save">Uložiť</button>
+    <button type="button" id="grant">Povoliť odosielanie na tento server</button>
+    <button type="button" id="collectNow">Zbierať teraz</button>
+    <div id="status"></div>
+    <script src="options.js"></script>
+  </body>
+</html>
