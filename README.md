@@ -43,10 +43,3 @@ Pozri [`env.example`](./env.example) ako šablónu — **neskladaj skutočné ta
 ## Súvisiaci backend
 
 V Next aplikácii nastav napr. `WAZE_METADATA_INGEST_SECRET` (zhodný s **Ingest token** v rozšírení), voliteľne `WAZE_METADATA_GEORSS_ALERT_WEBHOOK_URL` a ďalšie — pozri `docker-compose.yml` / `docker-compose.dev.yml` a lokálny `.env` (ten do Gitu nepatrí).
-
-
-production:
-https://discord.com/api/webhooks/1400381471772119060/g1EkcQTZAACgIuLyISbCslCKp8RrVwAl87W_4HSBkKagipMXWdMcj7Rb5jBslwrF7Grn
-
-test:
-https://discord.com/api/webhooks/1483806161382674483/2y9RF4g5BvzAV-4HVCXZiSYWFy8Hzsxlb98dhg6LSOEsm7yPOCS50LqvEtqyyFm1wcXZ
