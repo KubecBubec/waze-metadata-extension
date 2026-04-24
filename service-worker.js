@@ -38,6 +38,9 @@ function metadataSummaryForLog(metadata) {
     cookieHeaderChars: metadata.cookieHeader?.length ?? 0,
     georssApiTest: metadata.georssApiTest,
     georssFromPage: metadata.diagnostics?.georssFromPage,
+    georssHasRecaptchaHeader: Boolean(
+      metadata.georssMirroredHeaders?.["x-recaptcha-token"] || metadata.diagnostics?.georssNetworkCapture?.hasRecaptcha
+    ),
     userAgentPreview: (metadata.userAgent || "").slice(0, 80) + (metadata.userAgent?.length > 80 ? "…" : ""),
   }
 }
@@ -53,18 +56,28 @@ function psEscape(s) {
  */
 function buildWindowsGeorssTestCommands(metadata, georssUrl) {
   const url = georssUrl || DEFAULT_GEORSS_URL
+  const mirrored = metadata.georssMirroredHeaders || {}
   const xh = metadata.extraHeaders || {}
   const ua = psEscape(metadata.userAgent || "")
   const cookie = psEscape(metadata.cookieHeader || "")
-  const accept = psEscape(xh.Accept || "*/*")
-  const acceptLang = psEscape(xh["Accept-Language"] || "sk,en;q=0.8")
-  const referer = psEscape(xh.Referer || metadata.liveMapUrl || "https://www.waze.com/live-map/")
+  const accept = psEscape(mirrored.accept || xh.Accept || "*/*")
+  const acceptLang = psEscape(mirrored["accept-language"] || xh["Accept-Language"] || "sk,en;q=0.8")
+  const referer = psEscape(mirrored.referer || xh.Referer || metadata.liveMapUrl || "https://www.waze.com/live-map/")
   const origin = psEscape(xh.Origin || "https://www.waze.com")
+  const recaptcha = psEscape(mirrored["x-recaptcha-token"] || "")
+  const ifNoneMatch = psEscape(mirrored["if-none-match"] || "")
+  const priority = psEscape(mirrored.priority || "")
   const u = psEscape(url)
 
-  const powershell = `$r = Invoke-WebRequest -Uri '${u}' -Headers (@{'User-Agent'='${ua}';'Cookie'='${cookie}';'Accept'='${accept}';'Accept-Language'='${acceptLang}';'Referer'='${referer}';'Origin'='${origin}';'Sec-Fetch-Dest'='empty';'Sec-Fetch-Mode'='cors';'Sec-Fetch-Site'='same-origin'}) -UseBasicParsing; "StatusCode: $($r.StatusCode)  Bytes: $($r.Content.Length)"`
+  const psRecaptcha = recaptcha ? `;'x-recaptcha-token'='${recaptcha}'` : ""
+  const psIfNoneMatch = ifNoneMatch ? `;'If-None-Match'='${ifNoneMatch}'` : ""
+  const psPriority = priority ? `;'Priority'='${priority}'` : ""
+  const powershell = `$r = Invoke-WebRequest -Uri '${u}' -Headers (@{'User-Agent'='${ua}';'Cookie'='${cookie}';'Accept'='${accept}';'Accept-Language'='${acceptLang}';'Referer'='${referer}';'Origin'='${origin}';'Sec-Fetch-Dest'='empty';'Sec-Fetch-Mode'='cors';'Sec-Fetch-Site'='same-origin'${psRecaptcha}${psIfNoneMatch}${psPriority}}) -UseBasicParsing; "StatusCode: $($r.StatusCode)  Bytes: $($r.Content.Length)"`
 
-  const curl = `curl.exe -sS -w "\\nHTTP_CODE:%{http_code}\\n" -o NUL '${u}' -H 'User-Agent: ${ua}' -H 'Cookie: ${cookie}' -H 'Accept: ${accept}' -H 'Accept-Language: ${acceptLang}' -H 'Referer: ${referer}' -H 'Origin: ${origin}' -H 'Sec-Fetch-Dest: empty' -H 'Sec-Fetch-Mode: cors' -H 'Sec-Fetch-Site: same-origin'`
+  const curlRecaptcha = recaptcha ? ` -H 'x-recaptcha-token: ${recaptcha}'` : ""
+  const curlIfNoneMatch = ifNoneMatch ? ` -H 'If-None-Match: ${ifNoneMatch}'` : ""
+  const curlPriority = priority ? ` -H 'Priority: ${priority}'` : ""
+  const curl = `curl.exe -sS -w "\\nHTTP_CODE:%{http_code}\\n" -o NUL '${u}' -H 'User-Agent: ${ua}' -H 'Cookie: ${cookie}' -H 'Accept: ${accept}' -H 'Accept-Language: ${acceptLang}' -H 'Referer: ${referer}' -H 'Origin: ${origin}' -H 'Sec-Fetch-Dest: empty' -H 'Sec-Fetch-Mode: cors' -H 'Sec-Fetch-Site: same-origin'${curlRecaptcha}${curlIfNoneMatch}${curlPriority}`
 
   return { powershell, curl }
 }
@@ -192,13 +205,77 @@ function waitForTabComplete(tabId) {
   })
 }
 
-async function verifyGeorssInTab(tabId, georssUrl) {
+function headersArrayToObject(list) {
+  const out = {}
+  for (const h of list || []) {
+    const key = String(h?.name || "").trim()
+    if (!key) continue
+    out[key] = h?.value != null ? String(h.value) : ""
+  }
+  return out
+}
+
+async function captureGeorssRequestFromNetwork(tabId, timeoutMs = 9000) {
+  return new Promise((resolve) => {
+    let done = false
+    const finish = (result) => {
+      if (done) return
+      done = true
+      try {
+        chrome.webRequest.onBeforeSendHeaders.removeListener(onBeforeSendHeaders)
+      } catch {
+        // noop
+      }
+      clearTimeout(timer)
+      resolve(result)
+    }
+
+    const onBeforeSendHeaders = (details) => {
+      if (details.tabId !== tabId) return
+      if (!details.url?.includes("/live-map/api/georss")) return
+      finish({
+        matched: true,
+        capturedAt: new Date().toISOString(),
+        url: details.url,
+        method: details.method || "GET",
+        requestHeaders: headersArrayToObject(details.requestHeaders),
+      })
+    }
+
+    const timer = setTimeout(() => {
+      finish({
+        matched: false,
+        capturedAt: new Date().toISOString(),
+        url: null,
+        method: null,
+        requestHeaders: {},
+      })
+    }, Math.max(1000, timeoutMs))
+
+    chrome.webRequest.onBeforeSendHeaders.addListener(
+      onBeforeSendHeaders,
+      { urls: ["https://www.waze.com/live-map/api/georss*"] },
+      ["requestHeaders", "extraHeaders"]
+    )
+  })
+}
+
+async function verifyGeorssInTab(tabId, georssUrl, requestHeaders = {}) {
+  const safeHeaders = {}
+  const forwardNames = ["accept", "accept-language", "x-recaptcha-token", "if-none-match", "priority"]
+  for (const n of forwardNames) {
+    const v = requestHeaders[n] ?? requestHeaders[n.toLowerCase()] ?? requestHeaders[n.toUpperCase()]
+    if (v) safeHeaders[n] = String(v)
+  }
+  if (!safeHeaders.accept) safeHeaders.accept = "application/json, text/plain, */*"
+
   const [{ result }] = await chrome.scripting.executeScript({
     target: { tabId },
-    args: [georssUrl],
-    func: async (url) => {
+    world: "MAIN",
+    args: [georssUrl, safeHeaders],
+    func: async (url, headers) => {
       try {
-        const res = await fetch(url, { credentials: "same-origin", headers: { Accept: "*/*" } })
+        const res = await fetch(url, { credentials: "same-origin", headers })
         return { status: res.status, ok: res.ok }
       } catch (e) {
         return { ok: false, error: String(e?.message || e) }
@@ -215,6 +292,135 @@ async function getNavigatorInfo(tabId) {
       userAgent: navigator.userAgent,
       language: navigator.language || "en-US",
     }),
+  })
+  return result
+}
+
+async function startGeorssRequestProbe(tabId) {
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    world: "MAIN",
+    func: () => {
+      const KEY = "__wmeGeorssProbe"
+      const nowIso = () => new Date().toISOString()
+      if (window[KEY]?.active) return
+
+      const state = {
+        active: true,
+        startedAt: nowIso(),
+        matches: [],
+        origFetch: window.fetch,
+        origXhrOpen: XMLHttpRequest.prototype.open,
+        origXhrSend: XMLHttpRequest.prototype.send,
+        origXhrSetRequestHeader: XMLHttpRequest.prototype.setRequestHeader,
+      }
+
+      const capHeaders = (h) => {
+        try {
+          if (!h) return {}
+          if (h instanceof Headers) return Object.fromEntries(h.entries())
+          if (Array.isArray(h)) return Object.fromEntries(h)
+          return { ...h }
+        } catch {
+          return {}
+        }
+      }
+
+      const isGeorssUrl = (u) => typeof u === "string" && u.includes("/live-map/api/georss")
+
+      const record = (item) => {
+        state.matches.push({ ...item, seenAt: nowIso() })
+        if (state.matches.length > 20) state.matches = state.matches.slice(-20)
+      }
+
+      window.fetch = async function patchedFetch(input, init) {
+        try {
+          const req = input instanceof Request ? input : null
+          const url = req ? req.url : String(input)
+          if (isGeorssUrl(url)) {
+            record({
+              channel: "fetch",
+              url,
+              method: (init?.method || req?.method || "GET").toUpperCase(),
+              credentials: init?.credentials || req?.credentials || null,
+              mode: init?.mode || req?.mode || null,
+              referrer: init?.referrer || req?.referrer || null,
+              headers: capHeaders(init?.headers || req?.headers),
+            })
+          }
+        } catch {
+          // noop
+        }
+        return state.origFetch.apply(this, arguments)
+      }
+
+      XMLHttpRequest.prototype.open = function patchedOpen(method, url) {
+        this.__wmeProbeMeta = {
+          method: String(method || "GET").toUpperCase(),
+          url: String(url || ""),
+          headers: {},
+        }
+        return state.origXhrOpen.apply(this, arguments)
+      }
+
+      XMLHttpRequest.prototype.setRequestHeader = function patchedSetHeader(name, value) {
+        try {
+          if (this.__wmeProbeMeta?.headers) this.__wmeProbeMeta.headers[String(name)] = String(value)
+        } catch {
+          // noop
+        }
+        return state.origXhrSetRequestHeader.apply(this, arguments)
+      }
+
+      XMLHttpRequest.prototype.send = function patchedSend() {
+        try {
+          const m = this.__wmeProbeMeta
+          if (m && isGeorssUrl(m.url)) {
+            record({
+              channel: "xhr",
+              url: m.url,
+              method: m.method,
+              credentials: null,
+              mode: null,
+              referrer: null,
+              headers: { ...m.headers },
+            })
+          }
+        } catch {
+          // noop
+        }
+        return state.origXhrSend.apply(this, arguments)
+      }
+
+      window[KEY] = state
+    },
+  })
+}
+
+async function stopGeorssRequestProbe(tabId) {
+  const [{ result }] = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: "MAIN",
+    func: () => {
+      const KEY = "__wmeGeorssProbe"
+      const s = window[KEY]
+      if (!s?.active) return { active: false, startedAt: null, finishedAt: new Date().toISOString(), matches: [] }
+
+      window.fetch = s.origFetch
+      XMLHttpRequest.prototype.open = s.origXhrOpen
+      XMLHttpRequest.prototype.send = s.origXhrSend
+      XMLHttpRequest.prototype.setRequestHeader = s.origXhrSetRequestHeader
+
+      s.active = false
+      const out = {
+        active: false,
+        startedAt: s.startedAt || null,
+        finishedAt: new Date().toISOString(),
+        matches: Array.isArray(s.matches) ? s.matches.slice(-20) : [],
+      }
+      delete window[KEY]
+      return out
+    },
   })
   return result
 }
@@ -303,6 +509,12 @@ async function collectMetadataOnce({ trigger = "neznámy" } = {}) {
     await loaded
     swLog(runId, "reload", "Karta hlási načítanie dokončené")
     page("log", "► Stránka znova načítaná", "Ďalší krok: čakanie na ustálenie mapy")
+    const georssNetCapturePromise = captureGeorssRequestFromNetwork(
+      tabId,
+      Math.max(4000, (Number(settings.postSettleMs) || POST_SETTLE_MS) + 3000)
+    )
+    swLog(runId, "probe", "Spustený georss request probe (webRequest)")
+    page("log", "► Probe", "Sledujem reálny georss request v sieti")
 
     const settle = Math.max(0, Number(settings.postSettleMs) || POST_SETTLE_MS)
     if (settle > 0) {
@@ -347,9 +559,25 @@ async function collectMetadataOnce({ trigger = "neznámy" } = {}) {
       return { ok: false, error: err }
     }
 
-    swLog(runId, "georss", "Overujem georss fetch v kontexte stránky…", { url: settings.georssVerifyUrl })
+    const georssNetworkCapture = await georssNetCapturePromise
+    const georssVerifyUrl = georssNetworkCapture?.url || settings.georssVerifyUrl
+    const netHeaders = Object.fromEntries(
+      Object.entries(georssNetworkCapture?.requestHeaders || {}).map(([k, v]) => [String(k).toLowerCase(), v])
+    )
+    swLog(runId, "probe", "Zachytený georss request zo siete", {
+      matched: georssNetworkCapture?.matched,
+      url: georssNetworkCapture?.url,
+      hasRecaptcha: Boolean(netHeaders["x-recaptcha-token"]),
+    })
+    page("log", "► Probe výsledok", {
+      matched: georssNetworkCapture?.matched,
+      url: georssNetworkCapture?.url,
+      hasRecaptcha: Boolean(netHeaders["x-recaptcha-token"]),
+    })
+
+    swLog(runId, "georss", "Overujem georss fetch v kontexte stránky…", { url: georssVerifyUrl })
     page("log", "► Georss overenie", "fetch() na stránke…")
-    const georssFromPage = await verifyGeorssInTab(tabId, settings.georssVerifyUrl)
+    const georssFromPage = await verifyGeorssInTab(tabId, georssVerifyUrl, netHeaders)
     swLog(runId, "georss", "Výsledok georss", georssFromPage)
     page(georssFromPage.ok ? "log" : "warn", georssFromPage.ok ? "► Georss OK" : "△ Georss problém", georssFromPage)
 
@@ -357,7 +585,7 @@ async function collectMetadataOnce({ trigger = "neznámy" } = {}) {
       typeof georssFromPage.status === "number" && Number.isFinite(georssFromPage.status) ? georssFromPage.status : null
 
     const georssApiTest = {
-      url: settings.georssVerifyUrl,
+      url: georssVerifyUrl,
       httpStatus: georssHttpStatus,
       ok: Boolean(georssFromPage.ok),
       error: georssFromPage.error != null ? String(georssFromPage.error) : null,
@@ -370,16 +598,24 @@ async function collectMetadataOnce({ trigger = "neznámy" } = {}) {
       validUntil: null,
       ttlKnown: false,
       note:
-        "Chrome extension collector. Real metadata lifetime is unknown; refresh on 403/5xx. extraHeaders are defaults (no georss header mirroring).",
+        "Chrome extension collector. Real metadata lifetime is unknown; refresh on 403/5xx. georss uses mirrored headers captured via webRequest when available.",
       browser: "chrome-extension",
       liveMapUrl: settings.liveMapUrl,
       userAgent: nav.userAgent,
       cookieHeader,
       extraHeaders,
+      georssMirroredHeaders: netHeaders,
       importantCookiesPresent,
       georssApiTest,
       diagnostics: {
         georssFromPage,
+        georssNetworkCapture: {
+          matched: georssNetworkCapture?.matched || false,
+          hasRecaptcha: Boolean(netHeaders["x-recaptcha-token"]),
+          url: georssNetworkCapture?.url || null,
+          method: georssNetworkCapture?.method || null,
+          requestHeaders: georssNetworkCapture?.requestHeaders || {},
+        },
       },
     }
 
@@ -387,7 +623,7 @@ async function collectMetadataOnce({ trigger = "neznámy" } = {}) {
     swLog(runId, "metadata", "Súhrn metadát (bez hodnôt cookies)", summary)
     page("log", "► Súhrn metadát (celý objekt ide na server / súbor)", summary)
 
-    const winTest = buildWindowsGeorssTestCommands(metadata, settings.georssVerifyUrl)
+    const winTest = buildWindowsGeorssTestCommands(metadata, georssVerifyUrl)
     logWindowsTestCommands(runId, winTest)
     page("log", "► Windows PowerShell — 1 riadok (georss)", winTest.powershell)
     page("log", "► curl.exe — 1 riadok", winTest.curl)

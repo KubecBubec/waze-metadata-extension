@@ -3,7 +3,7 @@
   "name": "Waze metadata collector",
   "version": "1.0.0",
   "description": "Obnovuje Waze Live Map, zbiera session metadata a voliteľne ich odosiela na server.",
-  "permissions": ["alarms", "cookies", "storage", "tabs", "scripting"],
+  "permissions": ["alarms", "cookies", "storage", "tabs", "scripting", "webRequest"],
   "host_permissions": ["https://www.waze.com/*"],
   "optional_host_permissions": ["http://*/*", "https://*/*"],
   "background": {
