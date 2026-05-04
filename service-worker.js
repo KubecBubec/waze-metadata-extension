@@ -92,9 +92,9 @@ async function getSettings() {
   const d = await chrome.storage.sync.get({
     liveMapUrl: "https://www.waze.com/live-map/",
     georssVerifyUrl: DEFAULT_GEORSS_URL,
-    ingestUrl: "",
+    ingestUrl: "https://waze-assistance.site/api/waze-metadata-ingest",
     ingestToken: "",
-    refreshIntervalMinutes: 5,
+    refreshIntervalMinutes: 10,
     postSettleMs: POST_SETTLE_MS,
   })
   return d
@@ -639,7 +639,7 @@ async function collectMetadataOnce({ trigger = "neznámy" } = {}) {
           ingestResult = {
             ok: false,
             error:
-              "Chýba host permission pre ingest URL. Na stránke Možnosti klikni „Povoliť odosielanie na tento server“.",
+              "Chýba host permission pre ingest URL. Pridaj origin servera do host_permissions v manifest.json a znova načítať rozšírenie.",
           }
           swWarn(runId, "ingest", "Chýba oprávnenie pre origin", ingestResult.error)
           page("warn", "△ Ingest — chýba oprávnenie", ingestResult.error)
@@ -681,7 +681,7 @@ async function collectMetadataOnce({ trigger = "neznámy" } = {}) {
 
 async function ensureAlarm() {
   const { refreshIntervalMinutes } = await getSettings()
-  const period = Math.max(1, Number(refreshIntervalMinutes) || 5)
+  const period = Math.max(1, Number(refreshIntervalMinutes) || 10)
   await chrome.alarms.create(ALARM_NAME, { periodInMinutes: period })
   swLog("", "alarm", `Alarm „${ALARM_NAME}“ nastavený na každých ${period} min`)
 }

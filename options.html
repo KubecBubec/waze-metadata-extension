@@ -81,20 +81,24 @@
     <input
       id="ingestUrl"
       type="text"
-      placeholder="http://localhost:3000/api/waze-metadata-ingest"
+      placeholder="https://waze-assistance.site/api/waze-metadata-ingest"
       autocomplete="off"
     />
     <label for="ingestToken">Ingest token (Bearer, zhodný s WAZE_METADATA_INGEST_SECRET na serveri)</label>
-    <input id="ingestToken" type="password" placeholder="voliteľné ak server nevyžaduje" autocomplete="off" />
+    <input
+      id="ingestToken"
+      type="text"
+      placeholder="****************************************************************"
+      autocomplete="off"
+    />
     <p class="hint">
       Next.js endpoint <code>/api/waze-metadata-ingest</code> zapíše JSON do <code>var/waze-metadata.json</code> ako
       local-metadata-agent. V <code>.env</code> nastav <code>WAZE_METADATA_INGEST_SECRET</code> a sem rovnakú hodnotu.
-      Rozšírenie potrebuje „Povoliť odosielanie“ pre host ingest URL. PowerShell <code>Invoke-WebRequest</code> často dostane
+      Ingest môže volať len hosty uvedené v <code>host_permissions</code> manifestu (predvolene Waze + <code>waze-assistance.site</code>). Iný server doplníš tam a znova načítaš rozšírenie. PowerShell <code>Invoke-WebRequest</code> často dostane
       403 od Waze, zatiaľ čo <code>curl.exe</code> nie — iný TLS klient; rozšírenie používa fetch ako Chrome.
     </p>
 
     <button type="button" id="save">Uložiť</button>
-    <button type="button" id="grant">Povoliť odosielanie na tento server</button>
     <button type="button" id="collectNow">Zbierať teraz</button>
     <div id="status"></div>
     <script src="options.js"></script>

@@ -5,9 +5,9 @@ async function load() {
   const d = await chrome.storage.sync.get({
     liveMapUrl: "https://www.waze.com/live-map/",
     georssVerifyUrl: DEFAULT_GEORSS,
-    ingestUrl: "",
+    ingestUrl: "https://waze-assistance.site/api/waze-metadata-ingest",
     ingestToken: "",
-    refreshIntervalMinutes: 5,
+    refreshIntervalMinutes: 10,
     postSettleMs: 5000,
   })
   document.getElementById("liveMapUrl").value = d.liveMapUrl
@@ -29,7 +29,7 @@ document.getElementById("save").addEventListener("click", async () => {
   const georssVerifyUrl = document.getElementById("georssVerifyUrl").value.trim() || DEFAULT_GEORSS
   const ingestUrl = document.getElementById("ingestUrl").value.trim()
   const ingestToken = document.getElementById("ingestToken").value.trim()
-  const refreshIntervalMinutes = Math.max(1, parseInt(document.getElementById("refreshIntervalMinutes").value, 10) || 5)
+  const refreshIntervalMinutes = Math.max(1, parseInt(document.getElementById("refreshIntervalMinutes").value, 10) || 10)
   const postSettleMs = Math.max(0, parseInt(document.getElementById("postSettleMs").value, 10) || 5000)
 
   await chrome.storage.sync.set({
@@ -42,27 +42,6 @@ document.getElementById("save").addEventListener("click", async () => {
   })
   await chrome.runtime.sendMessage({ type: "reschedule-alarm" })
   setStatus("Uložené a alarm preplánovaný.")
-})
-
-document.getElementById("grant").addEventListener("click", async () => {
-  const ingestUrl = document.getElementById("ingestUrl").value.trim()
-  if (!ingestUrl) {
-    setStatus("Najprv vyplň Ingest URL.", true)
-    return
-  }
-  let originPattern
-  try {
-    originPattern = new URL(ingestUrl).origin + "/*"
-  } catch {
-    setStatus("Neplatná Ingest URL.", true)
-    return
-  }
-  try {
-    const ok = await chrome.permissions.request({ origins: [originPattern] })
-    setStatus(ok ? `Povolené: ${originPattern}` : "Používateľ zrušil oprávnenie.", !ok)
-  } catch (e) {
-    setStatus(String(e?.message || e), true)
-  }
 })
 
 document.getElementById("collectNow").addEventListener("click", async () => {

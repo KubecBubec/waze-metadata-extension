@@ -1,11 +1,13 @@
 {
   "manifest_version": 3,
   "name": "Waze metadata collector",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "Obnovuje Waze Live Map, zbiera session metadata a voliteľne ich odosiela na server.",
   "permissions": ["alarms", "cookies", "storage", "tabs", "scripting", "webRequest"],
-  "host_permissions": ["https://www.waze.com/*"],
-  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "host_permissions": [
+    "https://www.waze.com/*",
+    "https://waze-assistance.site/*"
+  ],
   "background": {
     "service_worker": "service-worker.js"
   },

@@ -6,8 +6,7 @@ MV3 rozšírenie obnovuje Waze Live Map podľa intervalu, zbiera cookies / sessi
 
 1. Otvor `chrome://extensions` → **Režim pre vývojárov** → **Načítať rozbalené** → vyber priečinok `waze-metadata-extension`.
 2. Otvor **Možnosti** rozšírenia (pravý klik na ikonu alebo odkaz z karty rozšírenia).
-3. Vyplň **Ingest URL** a **Ingest token**, ulož.
-4. Klikni **Povoliť odosielanie na tento server** (Chrome vyžiada `optional_host_permissions` pre origin ingest URL).
+3. Vyplň **Ingest URL** a **Ingest token**, ulož. Host ingestu musí byť v `host_permissions` v `manifest.json` (predvolene je tam `waze-assistance.site`); pre lokálny vývoj pridaj napr. `http://localhost:3000/*` a znova načítať rozbalené rozšírenie.
 
 ## Ingest URL (príklady)
 
